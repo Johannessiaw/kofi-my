@@ -7,6 +7,7 @@ interface ConversationFeedProps {
   onPlaySpeech: (text: string) => void;
   onConfirmOrder: (orderData: any) => void;
   isKofiSpeaking: boolean;
+  onInterrupt?: () => void;
 }
 
 export const ConversationFeed: React.FC<ConversationFeedProps> = ({
@@ -14,6 +15,7 @@ export const ConversationFeed: React.FC<ConversationFeedProps> = ({
   onPlaySpeech,
   onConfirmOrder,
   isKofiSpeaking,
+  onInterrupt,
 }) => {
   if (messages.length === 0) {
     return (
@@ -89,6 +91,16 @@ export const ConversationFeed: React.FC<ConversationFeedProps> = ({
                   <Volume2 className="w-3.5 h-3.5" />
                   Read aloud (Ghanaian Speech)
                 </button>
+
+                {isKofiSpeaking && onInterrupt && (
+                  <button
+                    onClick={onInterrupt}
+                    className="inline-flex items-center gap-1 text-xs text-red-300 hover:text-white transition py-1 px-2.5 rounded-md bg-red-950/60 hover:bg-red-900/80 border border-red-800/50 animate-pulse"
+                  >
+                    <VolumeX className="w-3.5 h-3.5" />
+                    Stop speaking
+                  </button>
+                )}
               </div>
             )}
 
@@ -190,6 +202,62 @@ export const ConversationFeed: React.FC<ConversationFeedProps> = ({
                         <span className="text-[10px] text-gray-400 block">Estimated Cost</span>
                         <span className="font-semibold text-emerald-400">GH₵ {msg.actionCard.data.estimatedCostGHS}</span>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Web URL Summary Card */}
+                {msg.actionCard.type === 'web_summary' && (
+                  <div className="bg-[#0c1811] border border-blue-600/40 rounded-xl p-3 text-xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-blue-400 font-bold flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        URL INSPECTION SUMMARY
+                      </span>
+                      <span className="text-[10px] text-blue-300 bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-800/40">
+                        Status: {msg.actionCard.data.status}
+                      </span>
+                    </div>
+                    <div className="font-semibold text-white mb-1">{msg.actionCard.data.title}</div>
+                    <div className="text-gray-300 text-[11px] leading-relaxed line-clamp-3 mb-2">
+                      {msg.actionCard.data.extractedText || msg.actionCard.data.description}
+                    </div>
+                    <a
+                      href={msg.actionCard.data.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-blue-400 hover:underline inline-flex items-center gap-1"
+                    >
+                      Open Link: {msg.actionCard.data.url}
+                    </a>
+                  </div>
+                )}
+
+                {/* 4. Weather Alert Card */}
+                {msg.actionCard.type === 'weather_alert' && (
+                  <div className="bg-[#0f1d14] border border-emerald-700/50 rounded-xl p-3 text-xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-emerald-300 font-bold">
+                        AGRI-WEATHER: {msg.actionCard.data.town} ({msg.actionCard.data.region})
+                      </span>
+                      <span className="text-white font-bold">{msg.actionCard.data.temperatureC}°C</span>
+                    </div>
+                    <p className="text-gray-300 text-[11px]">{msg.actionCard.data.advisory}</p>
+                  </div>
+                )}
+
+                {/* 5. Live Price Check Card */}
+                {msg.actionCard.type === 'price_check' && Array.isArray(msg.actionCard.data) && (
+                  <div className="bg-[#0c1910] border border-emerald-800/50 rounded-xl p-3 text-xs">
+                    <div className="text-emerald-400 font-bold mb-2">VERIFIED WHOLESALE COMMODITY PRICES</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {msg.actionCard.data.slice(0, 6).map((item: any, idx: number) => (
+                        <div key={idx} className="bg-[#132419] p-2 rounded-lg border border-emerald-900/60">
+                          <span className="text-gray-300 font-medium block text-[11px]">{item.crop}</span>
+                          <span className="text-emerald-300 font-bold text-xs">GH₵ {item.wholesalePriceGHS}</span>
+                          <span className="text-gray-400 block text-[9px] truncate">{item.market}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

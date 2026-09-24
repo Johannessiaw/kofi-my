@@ -17,7 +17,7 @@ import { JarvisVoiceEngine, VoiceState } from './services/voiceEngine';
 import { normalizeGhanaianSpeech } from './services/ghanaNlp';
 import { GHarvestDataManager, INITIAL_HARVESTS, INITIAL_ORDERS } from './services/gharvestData';
 import { SupportedLanguage, UserRole, VoiceMessage, Order, HarvestListing, ConversationMemory } from './types';
-import { Send, Mic, Sparkles, Volume2, Bot, AlertTriangle } from 'lucide-react';
+import { Send, Mic, Sparkles, Volume2, VolumeX, Bot, AlertTriangle, Radio } from 'lucide-react';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<'voice' | 'marketplace' | 'orders' | 'logistics' | 'nlp_studio'>('voice');
@@ -42,12 +42,45 @@ export default function App() {
   ]);
 
   const voiceEngineRef = useRef<JarvisVoiceEngine | null>(null);
+  const chatAbortControllerRef = useRef<AbortController | null>(null);
 
-  // Initialize Jarvis Voice Engine
+  // Global Esc key listener for quick interruption
   useEffect(() => {
-    // Load persisted state
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (voiceState === 'speaking' || voiceState === 'processing') {
+          handleInterrupt();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [voiceState]);
+
+  // Initialize Jarvis Voice Engine and sync backend data
+  useEffect(() => {
+    // Load persisted state locally first for instant paint
     setOrders(GHarvestDataManager.getOrders());
     setHarvests(GHarvestDataManager.getHarvests());
+
+    // Sync with backend API
+    fetch('/api/orders')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setOrders(data);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/harvests')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setHarvests(data);
+        }
+      })
+      .catch(() => {});
 
     const engine = new JarvisVoiceEngine({
       onStateChange: (newState) => {
@@ -71,14 +104,20 @@ export default function App() {
     voiceEngineRef.current = engine;
 
     return () => {
-      engine.stopSpeaking();
-      engine.stopListening();
+      engine.destroy();
     };
   }, []);
 
-  // Send query to Kofi
+  // Send query to Kofi with support for streaming/aborting during answer production
   const handleUserQuery = async (queryText: string) => {
     if (!queryText.trim()) return;
+
+    // Abort previous in-flight request if any
+    if (chatAbortControllerRef.current) {
+      chatAbortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    chatAbortControllerRef.current = abortController;
 
     // 1. Normalize query using GhanaNLP engine
     const norm = normalizeGhanaianSpeech(queryText);
@@ -99,18 +138,31 @@ export default function App() {
     }
 
     try {
-      // Call server-side Gemini chat endpoint
-      const response = await fetch('/api/gemini/chat', {
+      // Build structured multi-turn conversation history for Gemini
+      const history = messages.slice(-10).map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'model',
+        parts: [{ text: m.normalizedText }],
+      }));
+
+      // Call server-side Gemini chat endpoint with AbortSignal
+      const response = await fetch('/api/chat', {
         method: 'POST',
+        signal: abortController.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: norm.normalized,
           memory,
           language,
+          history,
         }),
       });
 
       const data = await response.json();
+
+      // If user interrupted during network wait, ignore response
+      if (abortController.signal.aborted) {
+        return;
+      }
 
       const kofiMsg: VoiceMessage = {
         id: `kofi-${Date.now()}`,
@@ -130,7 +182,19 @@ export default function App() {
       if (voiceEngineRef.current) {
         voiceEngineRef.current.speak(data.reply);
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        // User deliberately interrupted answer production
+        const interruptNote: VoiceMessage = {
+          id: `kofi-${Date.now()}`,
+          sender: 'kofi',
+          normalizedText: "(Answer cancelled. I am on standby listening for your next request...)",
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, interruptNote]);
+        return;
+      }
+
       console.error('Chat error:', e);
       const fallbackMsg: VoiceMessage = {
         id: `kofi-${Date.now()}`,
@@ -140,22 +204,36 @@ export default function App() {
       };
       setMessages((prev) => [...prev, fallbackMsg]);
       if (voiceEngineRef.current) {
-        voiceEngineRef.current.setState('idle');
+        if (voiceEngineRef.current.isVoiceActive()) {
+          voiceEngineRef.current.setState('standby');
+        } else {
+          voiceEngineRef.current.setState('idle');
+        }
+      }
+    } finally {
+      if (chatAbortControllerRef.current === abortController) {
+        chatAbortControllerRef.current = null;
       }
     }
   };
 
-  // Toggle mic
+  // Toggle mic: starts continuous standby mode or turns it off; if producing/speaking, interrupts
   const handleToggleMic = () => {
-    if (voiceState === 'listening') {
+    if (voiceState === 'speaking' || voiceState === 'processing') {
+      handleInterrupt();
+    } else if (voiceState === 'listening' || voiceState === 'standby') {
       voiceEngineRef.current?.stopListening();
     } else {
       voiceEngineRef.current?.startListening();
     }
   };
 
-  // Interrupt Kofi
+  // Interrupt Kofi (both speaking and answer generation)
   const handleInterrupt = () => {
+    if (chatAbortControllerRef.current) {
+      chatAbortControllerRef.current.abort();
+      chatAbortControllerRef.current = null;
+    }
     voiceEngineRef.current?.stopSpeaking();
   };
 
@@ -249,6 +327,13 @@ export default function App() {
     setOrders(GHarvestDataManager.getOrders());
     setActiveOrderModal(null);
 
+    // Sync with backend orders store
+    fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newOrder),
+    }).catch(() => {});
+
     const confirmationMsg: VoiceMessage = {
       id: `kofi-${Date.now()}`,
       sender: 'kofi',
@@ -265,12 +350,27 @@ export default function App() {
     GHarvestDataManager.updateOrderStatus(orderId, status, escrowStatus, note);
     setOrders(GHarvestDataManager.getOrders());
     voiceEngineRef.current?.playChime(660, 0.15);
+
+    // Sync with backend API
+    fetch(`/api/orders/${orderId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, escrowStatus, note }),
+    }).catch(() => {});
   };
 
   // Add new farmer harvest
   const handleAddHarvest = (newHarvest: HarvestListing) => {
     GHarvestDataManager.addHarvest(newHarvest);
     setHarvests(GHarvestDataManager.getHarvests());
+
+    // Sync with backend API
+    fetch('/api/harvests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newHarvest),
+    }).catch(() => {});
+
     const msg: VoiceMessage = {
       id: `kofi-${Date.now()}`,
       sender: 'kofi',
@@ -322,11 +422,73 @@ export default function App() {
                 onPlaySpeech={handleSpeakText}
                 onConfirmOrder={(orderData) => setActiveOrderModal(orderData)}
                 isKofiSpeaking={voiceState === 'speaking'}
+                onInterrupt={handleInterrupt}
               />
             </div>
 
             {/* Bottom Input Bar for text/voice hybrid */}
             <div className="sticky bottom-3 z-30 pt-3">
+              {/* Voice mode state banner */}
+              {voiceState !== 'idle' && (
+                <div className="mb-2 flex items-center justify-between px-3 py-1.5 rounded-xl bg-[#0c1810]/90 border border-emerald-800/60 backdrop-blur-md shadow-lg text-xs animate-in fade-in slide-in-from-bottom-2">
+                  <div className="flex items-center gap-2">
+                    {voiceState === 'standby' && (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-emerald-300 font-medium">Standby: Mic open</span>
+                        <span className="text-gray-400 hidden sm:inline">— speak whenever you're ready (no rush)</span>
+                      </>
+                    )}
+                    {voiceState === 'listening' && (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                        <span className="text-red-300 font-medium">Hearing you...</span>
+                      </>
+                    )}
+                    {voiceState === 'processing' && (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-spin" />
+                        <span className="text-amber-300 font-medium">Producing answer...</span>
+                      </>
+                    )}
+                    {voiceState === 'speaking' && (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
+                        <span className="text-teal-300 font-medium">Kofi is speaking</span>
+                        <span className="text-gray-400 hidden sm:inline">— tap to interrupt</span>
+                      </>
+                    )}
+                    {voiceState === 'interrupted' && (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-red-400" />
+                        <span className="text-red-300 font-medium">Interrupted</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {(voiceState === 'speaking' || voiceState === 'processing') ? (
+                      <button
+                        type="button"
+                        onClick={handleInterrupt}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/50 text-[11px] font-semibold transition active:scale-95"
+                      >
+                        <VolumeX className="w-3.5 h-3.5" />
+                        Interrupt
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleToggleMic}
+                        className="text-[11px] text-gray-400 hover:text-gray-200 transition"
+                      >
+                        Turn off
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -338,13 +500,29 @@ export default function App() {
                   type="button"
                   onClick={handleToggleMic}
                   className={`p-2.5 rounded-xl transition ${
-                    voiceState === 'listening'
+                    voiceState === 'speaking' || voiceState === 'processing'
+                      ? 'bg-red-600/90 text-white animate-pulse shadow-lg shadow-red-900/50 hover:bg-red-500'
+                      : voiceState === 'listening'
                       ? 'bg-red-500 text-white animate-pulse'
+                      : voiceState === 'standby'
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50 ring-2 ring-emerald-400/50'
                       : 'bg-emerald-950 text-emerald-400 hover:bg-emerald-900 border border-emerald-800/40'
                   }`}
-                  title="Toggle Microphone"
+                  title={
+                    voiceState === 'speaking' || voiceState === 'processing'
+                      ? 'Interrupt Kofi (Esc)'
+                      : voiceState === 'standby'
+                      ? 'Mic is on Standby (Click to turn off)'
+                      : voiceState === 'listening'
+                      ? 'Listening to speech...'
+                      : 'Start hands-free voice mode'
+                  }
                 >
-                  <Mic className="w-5 h-5" />
+                  {voiceState === 'speaking' || voiceState === 'processing' ? (
+                    <VolumeX className="w-5 h-5" />
+                  ) : (
+                    <Mic className="w-5 h-5" />
+                  )}
                 </button>
 
                 <input

@@ -15,9 +15,11 @@ export const QuickPrompts: React.FC<QuickPromptsProps> = ({
   const prompts = [
     { label: '🍅 Order Techiman Tomatoes', text: 'I need 50 crates of tomatoes from Techiman delivered to Kumasi.' },
     { label: '🌽 Twi Order (20 Bags Maize)', text: 'Me pɛ 20 bags of maize, na ɛsɛ sɛ wɔde kɔ Kumasi.' },
-    { label: '📊 Market Prices Today', text: 'What is the current market price of tomatoes, maize and yam in Techiman and Kejetia?' },
+    { label: '📊 Live Market Prices', text: 'What is the current market price of tomatoes, maize and yam in Techiman and Kejetia?' },
     { label: '🚚 Transport Techiman to Accra', text: 'Calculate transport cost and route from Techiman to Accra for 50 crates.' },
-    { label: '👨‍🌾 Farmer Listing (Sell)', text: 'I want to sell 100 crates of fresh Roma tomatoes in Techiman.' },
+    { label: '🇬🇭 History: Kwame Nkrumah', text: 'Who was Kwame Nkrumah and what was his contribution to Ghanaian agriculture?' },
+    { label: '🔗 Inspect MoFA Website', text: 'Inspect this URL https://mofa.gov.gh and summarize current agricultural policies.' },
+    { label: '🔢 Calculate 450 * 18', text: 'Calculate 450 * 18 GHS for my transport ledger.' },
   ];
 
   return (

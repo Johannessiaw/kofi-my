@@ -3,7 +3,7 @@ import { ASR_CORRECTIONS_DICT, GHANAIAN_CROPS, GHANAIAN_TOWNS, GHANAIAN_UNITS } 
 export interface NormalizedResult {
   raw: string;
   normalized: string;
-  detectedLanguage: 'en-GH' | 'ak-GH' | 'mixed';
+  detectedLanguage: 'en-GH' | 'ak-GH' | 'ga-GH' | 'ee-GH' | 'mixed';
   correctionsApplied: { from: string; to: string }[];
   entities: {
     crop?: string;
@@ -38,13 +38,31 @@ export function normalizeGhanaianSpeech(rawText: string): NormalizedResult {
   const lower = text.toLowerCase();
   const correctionsApplied: { from: string; to: string }[] = [];
   let isTwi = false;
+  let isGa = false;
+  let isEwe = false;
   let isEnglish = true;
 
-  // 1. Check for Twi vocabulary markers
-  const twiMarkers = ['me pɛ', 'sɛ me', 'aduasa', 'aduanan', 'adaduonum', 'aburo', 'bankye', 'bayere', 'borɔdeɛ', 'wɔ', 'fa kɔ', 'sɛn na'];
+  // 1. Check for Language Markers
+  const twiMarkers = ['me pɛ', 'sɛ me', 'aduasa', 'aduanan', 'adaduonum', 'aburo', 'bankye', 'bayere', 'borɔdeɛ', 'wɔ', 'fa kɔ', 'sɛn na', 'akye'];
   for (const marker of twiMarkers) {
     if (lower.includes(marker)) {
       isTwi = true;
+      break;
+    }
+  }
+
+  const gaMarkers = ['ojekoo', 'te oyoo', 'mi tao', 'mi ngɛ', 'amɛ̃', 'ablẽ', 'yele', 'duade', 'amadaa', 'kpakpo shito', 'ekome', 'enyɔ'];
+  for (const marker of gaMarkers) {
+    if (lower.includes(marker)) {
+      isGa = true;
+      break;
+    }
+  }
+
+  const eweMarkers = ['ndi na mi', 'foɛ nyuie', 'me di be', 'teli', 'bli', 'agbleli', 'agbaɖu', 'atadi', 'ɖeka', 'eve', 'etɔ̃'];
+  for (const marker of eweMarkers) {
+    if (lower.includes(marker)) {
+      isEwe = true;
       break;
     }
   }
@@ -145,7 +163,7 @@ export function normalizeGhanaianSpeech(rawText: string): NormalizedResult {
     entities.currency = 'GHS';
   }
 
-  const detectedLanguage = isTwi ? (isEnglish ? 'mixed' : 'ak-GH') : 'en-GH';
+  const detectedLanguage = isGa ? 'ga-GH' : isEwe ? 'ee-GH' : isTwi ? (isEnglish ? 'mixed' : 'ak-GH') : 'en-GH';
 
   return {
     raw: rawText,
@@ -184,6 +202,8 @@ export const GHANAIAN_TTS_PRONUNCIATION_MAP: Record<string, string> = {
   'Borode': 'Baw-raw-deh',
   'Mankani': 'Mahn-kah-nee',
   'Nsusuwa': 'En-soo-soo-wah',
+  'Ojekoo': 'Oh-jeh-koh',
+  'Ndi na mi': 'En-dee nah mee',
   'GHS': 'Ghana cedis',
   'GH₵': 'Ghana cedis',
   'cedis': 'cedis',

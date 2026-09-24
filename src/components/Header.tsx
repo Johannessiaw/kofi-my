@@ -151,6 +151,8 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <option value="en-GH">🇬🇭 English (GH)</option>
               <option value="ak-GH">🇬🇭 Twi (Akan)</option>
+              <option value="ga-GH">🇬🇭 Ga (Accra)</option>
+              <option value="ee-GH">🇬🇭 Ewe (Volta)</option>
               <option value="pcm-GH">🇬🇭 Pidgin</option>
             </select>
           </div>

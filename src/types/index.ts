@@ -1,5 +1,5 @@
 export type UserRole = 'buyer' | 'farmer' | 'logistics';
-export type SupportedLanguage = 'en-GH' | 'ak-GH' | 'pcm-GH'; // Ghanaian English, Twi (Akan), Ghanaian Pidgin
+export type SupportedLanguage = 'en-GH' | 'ak-GH' | 'ga-GH' | 'ee-GH' | 'pcm-GH'; // Ghanaian English, Twi (Akan), Ga, Ewe, Ghanaian Pidgin
 
 export interface SmallholderFarmer {
   id: string;
@@ -111,7 +111,7 @@ export interface VoiceMessage {
   audioPlaying?: boolean;
   intent?: string;
   actionCard?: {
-    type: 'order_summary' | 'logistics_estimate' | 'farmer_card' | 'price_check' | 'weather_alert' | 'confirmation_needed';
+    type: 'order_summary' | 'logistics_estimate' | 'farmer_card' | 'price_check' | 'weather_alert' | 'confirmation_needed' | 'harvest_list' | 'web_summary';
     data: any;
   };
   toolsUsed?: string[];
